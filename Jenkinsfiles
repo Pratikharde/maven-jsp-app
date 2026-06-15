@@ -1,0 +1,46 @@
+pipeline {
+    agent any
+    stages {
+        stage('Checkout from GitHub') {
+            steps {
+                git branch: 'main', url: 'https://github.com/Pratikharde/maven-jsp-app.git'
+            }
+        }
+        stage('Build with Maven') {
+            steps {
+                sh 'mvn clean package'
+            }
+        }
+        stage('Trivy FS Scan') {
+            steps {
+                sh 'trivy fs .'
+            }
+        }
+        stage('Build Docker Image') {
+            steps {
+                sh 'docker build -t pratikhub07/jsp-image .'
+            }
+        }
+        stage('Trivy Image Scan') {
+            steps {
+                sh 'trivy image pratikhub07/jsp-image'
+            }
+        }
+        stage('Push to DockerHub') {
+            steps {
+                    sh 'docker push pratikhub07/jsp-image:v1'
+                }
+        }
+        stage('Deploy to Kubernetes') {
+            steps {
+                sh 'kubectl apply -f k8s/deployment.yaml -f k8s/service.yaml'
+            }
+        }
+        stage('Slack Notification') {
+            steps {
+                slackSend(channel: '#jenkins-alerts', message: "Pipeline finished: ${currentBuild.currentResult}")
+            }
+        }
+    }
+}
+
