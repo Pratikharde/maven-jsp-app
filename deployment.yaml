@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: maven-jsp-app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: maven-jsp-app
+  template:
+    metadata:
+      labels:
+        app: maven-jsp-app
+    spec:
+      containers:
+      - name: maven-jsp-app
+        image: pratikhub07/jsp-image
+        ports:
+        - containerPort: 8080
+
