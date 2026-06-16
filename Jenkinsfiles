@@ -1,46 +1,103 @@
 pipeline {
     agent any
+    
+    environment {
+        DOCKER_HUB_USER = "pratikhub07"
+        IMAGE_NAME = "jsp-app-image"
+        IMAGE_TAG = "${BUILD_NUMBER}"
+        CONTAINER_NAME = "jsp-app-container"
+    }
+
     stages {
-        stage('Checkout from GitHub') {
+        stage('Clone Code') {
             steps {
                 git branch: 'main', url: 'https://github.com/Pratikharde/maven-jsp-app.git'
             }
         }
-        stage('Build with Maven') {
+
+        stage('Build') {
             steps {
-                sh 'mvn clean package'
+                sh '''
+                export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+                export M2_HOME=/home/admin07/Tools/apache-maven-3.9.15
+                export PATH=$JAVA_HOME/bin:$M2_HOME/bin:$PATH
+                
+                mvn clean install
+                '''
             }
         }
-        stage('Trivy FS Scan') {
+
+        stage('Trivy Scan') {
             steps {
-                sh 'trivy fs .'
+                sh 'trivy fs --severity HIGH,CRITICAL .'
             }
-        }
+        }  
+
         stage('Build Docker Image') {
             steps {
-                sh 'docker build -t pratikhub07/jsp-image .'
+                sh '''
+                docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
+                '''
             }
         }
-        stage('Trivy Image Scan') {
+
+
+        stage('Docker Hub Login') {
             steps {
-                sh 'trivy image pratikhub07/jsp-image'
-            }
-        }
-        stage('Push to DockerHub') {
-            steps {
-                    sh 'docker push pratikhub07/jsp-image:v1'
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'Docker-Credentials',
+                        usernameVariable: 'DOCKER_USER',
+                        passwordVariable: 'DOCKER_TOKEN'
+                    )
+                ]) {
+                    sh 'echo "$DOCKER_TOKEN" | docker login -u "$DOCKER_USER" --password-stdin'
                 }
+            }
         }
+        
+        stage('Tag Image') {
+            steps {
+                sh '''
+                docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${DOCKER_HUB_USER}/${IMAGE_NAME}:${IMAGE_TAG}
+                '''
+            }
+        }
+
+        stage('Push Image') {
+            steps {
+                sh '''
+                docker push ${DOCKER_HUB_USER}/${IMAGE_NAME}:${IMAGE_TAG}
+                '''
+            }
+        }
+
         stage('Deploy to Kubernetes') {
             steps {
-                sh 'kubectl apply -f k8s/deployment.yaml -f k8s/service.yaml'
-            }
-        }
-        stage('Slack Notification') {
-            steps {
-                slackSend(channel: '#jenkins-alerts', message: "Pipeline finished: ${currentBuild.currentResult}")
+                sh '''
+                    kubectl apply -f deployment.yaml 
+                    kubectl apply -f svc.yaml
+                '''
             }
         }
     }
-}
 
+   post {
+
+        success {
+            slackSend(
+                channel: '#jenkins-alerts',
+                color: 'good',
+                message: """
+SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER}
+
+Application deployed successfully.
+
+Build URL:
+${env.BUILD_URL}
+"""
+            )
+        }
+    }
+
+}
